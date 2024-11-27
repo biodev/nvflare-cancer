@@ -38,6 +38,7 @@ The central NVFlare dashboard and server was installed by the `Project Admin`. A
     - [Install a client on AWS](#install-a-client-on-aws)
       - [Upgrade all packages](#upgrade-all-packages)
     - [Install a client on HPC](#install-a-client-on-hpc)
+      - [Install a client on the HPC login node](#install-a-client-on-the-hpc-login-node)
     - [Install a client on your WSL Laptop](#install-a-client-on-your-wsl-laptop)
     - [Verify installation](#verify-installation)
 - [(Not needed right now): Deploying a new NVFlare Project](#not-needed-right-now-deploying-a-new-nvflare-project)
@@ -346,7 +347,8 @@ options:
 
 ### Client API with external process (Slurm use case)
 
-NVFlare supports the use of [external processes](https://github.com/NVIDIA/NVFlare/blob/main/examples/hello-world/ml-to-fl/README.md#advanced-user-options-client-api-with-different-implementations) which enables us to spawn of a job to an hpc cluster. Please connect to the login node of your HPC cluster and run a POC job :
+
+NVFlare supports the use of [external processes](https://github.com/NVIDIA/NVFlare/blob/main/examples/hello-world/ml-to-fl/README.md#advanced-user-options-client-api-with-different-implementations) which enables us to spawn of a job to an hpc cluster. Please connect to the login node of your HPC cluster and run a POC job after your org admin did [install a client on an HPC login node](#install-a-client-on-the-hpc-login-node):
 
 - You can write your client side training script following examples https://github.com/NVIDIA/NVFlare/tree/main/examples/hello-world/ml-to-fl
 
@@ -356,7 +358,7 @@ NVFlare supports the use of [external processes](https://github.com/NVIDIA/NVFla
 
 Let's start this step by step in POC mode. 
 
-- First you connect to the login node and switch to the checked out NVFlare git repository and create a `myjobs` folder (assuming you cloned the NVFlare repos in the root of your home directory)
+- First you connect to the login node and use the [simple instructions for WSL Laptop](#install-a-client-on-your-wsl-laptop) to install the client and switch to the checked out NVFlare git repository and create a `myjobs` folder (assuming you cloned the NVFlare repos in the root of your home directory)
 
 ```
 cd ~/NVFlare && mkdir myjobs
@@ -570,7 +572,7 @@ sudo reboot
 
 ### Install a client on HPC 
 
-Note: *This approach requires you to allocate a GPU node for a long time. Running [nvflare on the login node and then submitting jobs to the cluster](#client-api-with-external-process-slurm-use-case) is likelty much more efficient*
+Note: *This approach requires you to allocate a GPU node for a long time. Running [nvflare on the login node and then submitting jobs to the cluster](#client-api-with-external-process-slurm-use-case) is likelty much more efficient. For this you just need to [Install a client on the HPC login node](#install-a-client-on-the-hpc-login-node)*
 
 Login as `Org Admin` at `https://myproject.mydomain.edu` and confirm that you have added a client site, that you perhaps call HPC-A40 based on the GPUs you use. Again, make sure you enter the [correct amount of GPU memory](#enter-available-gpu-memory). After this client site is approved by the `Project Admin` you can go to DOWNLOADS -> Client Sites -> HPC-A40 click "Download Startup Kit" and keep the password (copy it somewhere)
 
@@ -673,6 +675,42 @@ There are a few considerations when running NVFlare on an HPC Cluster:
 - Check with your HPC admin if it is allowed to run cronjobs on the HPC login node, it will likely be OK if it is a light weight bash script like this one.
 - Most HPC nodes need to allocate a GPU exclusively for the duration of the job. We need to understand that NVFlare client will wait for jobs while a GPU is already allocated which means that the GPU will be idle most times
 - HPC systems using Slurm >=22.05 have the ability to share GPUs across multiple jobs. You can ask your HPC Admin to enable [Slurm GPU Sharding](https://slurm.schedmd.com/gres.html#Sharding) to increase the efficiency of the HPC cluster.
+
+#### Install a client on the HPC login node 
+
+These instructions are required for uses of [Client API with external process (Slurm use case)](#client-api-with-external-process-slurm-use-case). To run the client on an HPC login node or another node that has access to the srun command we are creating a service. It is recommended to get a service account from the HPC team and to install this in the home director of that service account. First prepare the folder
+
+```
+mkdir -p ~/.config/systemd/user
+vi ~/.config/systemd/user/nvflare-client.service
+```
+
+then create the service file 
+
+```
+[Unit]
+Description=NVFlare Client Training Service
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h
+ExecStart=/bin/bash -c 'folder=$(pwd); client=HPC-A40; organization=Test; source %h/.local/nvf/.venv/bin/activate; python -u -m nvflare.private.fed.app.client.client_train -m ${folder} -s fed_client.json --set uid=${client} secure_train=true config_folder=config org=${organization}'
+Restart=on-failure
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=default.target
+```
+
+and finally enable and start the service 
+
+```
+systemctl --user daemon-reload
+systemctl --user enable nvflare-client.service
+systemctl --user start nvflare-client.service
+```
+
 
 ### Install a client on your WSL Laptop
 
